@@ -1,0 +1,9 @@
+*.swp
+*.ppu
+*.o
+*.exe
+*.log
+*.res
+
+/.vscode/
+assort
