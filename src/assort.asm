@@ -50,7 +50,6 @@ include console.inc ; загрузка директив и макроопред�
             mul ebx
             add eax, FIXED_MEM_SIZE ; eax := 2*ebx + FIXED_MEM_SIZE
             jc @err_mem_overflow ; больше нельзя выделить память
-            mov arr_size_limit, eax ; лимит размера памяти
             New eax ; выделение места размера [eax] с адресом - eax
             ; comment *
                 ConsoleMode ; CP866 -> CP1251
@@ -62,8 +61,18 @@ include console.inc ; загрузка директив и макроопред�
                 OutStrLn
                 ConsoleMode ; CP1251 -> CP866
             ; *
-           
-        xor esi, esi ; ТЕПЕРЬ esi - счётчик скопированных байт
+            mov arr_size_limit, eax ; лимит размера памяти
+        
+        @first_sentence:
+            cmp ebx, 0
+            jne @copy_arr
+            mov ecx, 7
+            @@first_sentence_loop:
+                push 0
+                loop @@first_sentence_loop
+            add ebx, 28
+
+        ; esi = 0, счётчик скопированных байт
         ; копирование в новый массив
         @copy_arr:
             cmp esi, ebx 
@@ -88,10 +97,8 @@ include console.inc ; загрузка директив и макроопред�
         @read_char:
             xor eax, eax
 
-            SetTextAttr CLR_LIGHT_BLUE
             InChar char ; введённый символ
             movzx esi, char ; ТЕПЕРЬ esi - последний символ
-            OutStrLn
 
         @parse_char:
             ; игнорирование пробельных символов
@@ -103,9 +110,8 @@ include console.inc ; загрузка директив и макроопред�
 
                 cmp esi, 92 ; игнор бэкслеша
                 jne @@does_text_end
-                InChar char
-                OutStrLn
-                jmp @read_char
+                InChar char ; введённый символ
+                movzx esi, char ; ТЕПЕРЬ esi - последний символ
 
             ; проверка конца текста -:fin:-
             @@does_text_end:
@@ -123,8 +129,14 @@ include console.inc ; загрузка директив и макроопред�
                 jne @@does_sentence_end
                 cmp esi, '-'
                 jne @@does_sentence_end
-
                 xor esi, esi
+
+                cmp byte ptr [esp+24], 0
+                jne @read_arr_end
+                dec ecx
+                cmp ecx, 0
+                je @err_empty_string
+
                 jmp @read_arr_end
 
             ; проверка конца предложения
@@ -138,23 +150,30 @@ include console.inc ; загрузка директив и макроопред�
                 jmp @@insert_char
                 ; переход на следующее предложение
                 @@@sentence_ends:
-                    push 0
                     xor esi, esi
+
+                    cmp byte ptr [esp], 0  
+                    je @@debug_1
+
+                    push 0
                     add ebx, 4
-                    inc ecx
                     jmp @@debug_1
 
             ; вставка символ в массив
             @@insert_char:
-                push esi
-                xor esi, esi
-                add ebx, 4
-                jmp @@debug_1
+                cmp byte ptr [esp], 0
+                jne @@@push_char
+                inc ecx
+
+                @@@push_char:
+                    push esi
+                    xor esi, esi
+                    add ebx, 4
 
             ; отладка
             @@debug_1:
                 ; comment *
-                    ConsoleMode ; смена кодировки CP866 на CP1251
+                    ConsoleMode ; CP866 -> CP1251
                     SetTextAttr CLR_CYAN
                     OutStr "Размер массива текста: "
                     OutInt ebx
@@ -165,8 +184,6 @@ include console.inc ; загрузка директив и макроопред�
                     OutIntLn ecx
 
                     OutStr 'Последние 7 элементов стека: '
-                    OutChar byte ptr [esp+28]
-                    OutChar ' '
                     OutChar byte ptr [esp+24]
                     OutChar ' '
                     OutChar byte ptr [esp+20]
@@ -178,8 +195,10 @@ include console.inc ; загрузка директив и макроопред�
                     OutChar byte ptr [esp+8]
                     OutChar ' '
                     OutChar byte ptr [esp+4]
+                    OutChar ' '
+                    OutChar byte ptr [esp]
                     OutStrLn
-                    ConsoleMode ; смена кодировки CP1251 на CP866 *
+                    ConsoleMode ; CP1251 -> CP866 *
 
                 jmp @check_memory
 
@@ -190,7 +209,15 @@ include console.inc ; загрузка директив и макроопред�
             OutStrLn 'ERR1: Переполнение памяти'
             SetTextAttr CLR_WHITE
             ConsoleMode ; CP1251 -> CP688
-
+            jmp @err
+        ; ошибка - пустая строка
+        @err_empty_string:
+            ConsoleMode ; CP866 -> CP1251
+            SetTextAttr CLR_LIGHT_RED
+            OutStrLn 'ERR2: Пустая строка'
+            SetTextAttr CLR_WHITE
+            ConsoleMode ; CP1251 -> CP688
+        @err:
             Dispose edi ; освободить память динамической структуры
             mov esp, ebp
             pop ebp
@@ -226,10 +253,12 @@ include console.inc ; загрузка директив и макроопред�
             push ebp
             mov ebp, esp
 
-        ; заполнение массив
+        mov eax, edi
+        ; заполнение массива
         @fill_arr:
-            add eax, edi
             cmp byte ptr [eax], 0
+            outchar byte ptr [eax]
+            add eax, 4
             jne @fill_arr
             push eax
             sub eax, edi
