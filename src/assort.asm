@@ -1,174 +1,131 @@
-include console.inc ; загрузка директив и макроопределений В.Г.Баулы
+include console.inc ; загрузка макросов В.Г.Баулы
 
 .const
-    FIXED_MEM_SIZE equ 128 ; размер памяти в байтах при выделении (добавок в стеке)
-    RESERVED_MEM_SIZE equ 16 ; зарезервированный размер памяти в байтах (сверху стека)
+    FIXED_MEM_SIZE equ 32 ; фиксированный размер памяти в байтах при выделении
+    RESERVED_MEM_SIZE equ 8 ; зарезервированный размер памяти в байтах
 
     STR_TITLE db 'ASSort',0
 
     CLR_CYAN        equ 3
-    CLR_LIGHT_BLUE  equ 9
     CLR_LIGHT_GREEN equ 10
     CLR_LIGHT_RED   equ 12
     CLR_WHITE       equ 15
 
 .data
     arr_size_limit dd 0 ; лимит размер массива
+    sentences      dd 0 ; количество предложений
+    slash          db 0
     char           db ?
 
 .code
     ; считать и обработать ввод в массив
     Read_arr proc
-        ; настроить массив текста
-        @set_arr_text:
-            comment *
-                Резервированные аргументы процедуры (4 байта)
-            *
 
-            push ebp ; ebp := база стека
-            mov ebp, esp ; esp := указатель вершины стека
-
-            comment *
-               Резервированные переменные процедуры (4 байта)
-            *
-
-            xor edi, edi ; edi - начало массива
-            xor ebx, ebx ; ebx - текущий размер массива (байты)
-            xor ecx, ecx ; ecx - текущее количество предложений (шт)
-        
         ; достаточно ли памяти?
-        @check_memory:
+        @check_mem:
             mov eax, arr_size_limit
             sub eax, ebx
             cmp eax, RESERVED_MEM_SIZE
-            ; arr_size_limit - ebx > RESERVED_MEM_SIZE => @read_chac
-            ja @read_char
+            jbe @allocate_mem ; arr_size_limit - ebx <= RESERVED_MEM_SIZE
+            jmp @parse_char
 
         ; выделить память
         @allocate_mem:
             mov eax, 2
             mul ebx
-            add eax, FIXED_MEM_SIZE ; eax := 2*ebx + FIXED_MEM_SIZE
             jc @err_mem_overflow ; больше нельзя выделить память
+            add eax, FIXED_MEM_SIZE ; eax := 2*arr_size + FIXED_MEM_SIZE
+            jc @err_mem_overflow ; больше нельзя выделить память
+
+            mov arr_size_limit, eax ; лимит размера памяти
             New eax ; выделение места размера [eax] с адресом - eax
+            mov esi, eax
+            xchg edi, esi ; теперь edi - начало нового массива, esi - начало старого массива
             ; comment *
                 ConsoleMode ; CP866 -> CP1251
                 SetTextAttr CLR_CYAN
-                OutStr "Адрес начала старого массива текста: "
+                OutStr "Начало старого массива текста: "
+                OutIntLn esi
+                OutStr "Начало нового массива текста: " 
                 OutIntLn edi
-                OutStr "Адрес нового массива текста: " 
-                OutIntLn eax ; ТЕПЕРЬ eax - начало нового массива текста
                 OutStrLn
                 ConsoleMode ; CP1251 -> CP866
             ; *
-            mov arr_size_limit, eax ; лимит размера памяти
         
         @first_sentence:
             cmp ebx, 0
             jne @copy_arr
             mov ecx, 7
-            @@first_sentence_loop:
-                push 0
-                loop @@first_sentence_loop
-            add ebx, 28
+            @first_sentence_loop:
+                mov byte ptr [edi+ecx-1], 0
+                loop @first_sentence_loop
+            mov byte ptr [edi+7], 10
+            add ebx, 8
+            jmp @parse_char
 
-        ; esi = 0, счётчик скопированных байт
         ; копирование в новый массив
         @copy_arr:
-            cmp esi, ebx 
-            jae @copied_arr
-
-            ; начало старого массива + смещение ->
-            ; -> начало нового массива + смещение
-            mov edx, [edi+esi]
-            mov [eax+esi], edx
-
-            add esi, 4
-            jmp @copy_arr
+            mov ecx, ebx
+            @@copy_arr_loop:
+                dec ecx
+                ; [esi+ecx-1] -> [edi+ecx-1]
+                mov ah, byte ptr [esi+ecx]
+                mov byte ptr [edi+ecx], ah
+                cmp ecx, -1
+                jne @@copy_arr_loop
         
-        ; после копирования в новый массив
-        @copied_arr:
-            xor esi, esi
-            xor edx, edx
-
-            mov edi, eax ; ТЕПЕРЬ edi - начало нового массива
-            Dispose eax
-
-        @read_char:
-            xor eax, eax
-
-            InChar char ; введённый символ
-            movzx esi, char ; ТЕПЕРЬ esi - последний символ
+        @delete_arr:
+            cmp esi, 0
+            jne @parse_char
+            Dispose esi ; удалить старый массив
 
         @parse_char:
+            SetTextAttr CLR_LIGHT_GREEN
+            InChar char ; введённый символ
+
             ; игнорирование пробельных символов
             @@ignore_char:
-                cmp esi, 0 ; игнор 😂
-                je @read_char
-                cmp esi, 10 ; игнор переноса строки
-                je @read_char
+                cmp char, 9 ; игнор HT
+                je @parse_char
+                cmp char, 10 ; игнор LF
+                je @parse_char
+                cmp char, 13 ; игнор CR
+                je @parse_char
 
-                cmp esi, 92 ; игнор бэкслеша
-                jne @@does_text_end
-                InChar char ; введённый символ
-                movzx esi, char ; ТЕПЕРЬ esi - последний символ
-
-            ; проверка конца текста -:fin:-
-            @@does_text_end:
-                cmp byte ptr [esp+20], '-'
-                jne @@does_sentence_end
-                cmp byte ptr [esp+16], ':'
-                jne @@does_sentence_end
-                cmp byte ptr [esp+12], 'f'
-                jne @@does_sentence_end
-                cmp byte ptr [esp+8], 'i'
-                jne @@does_sentence_end
-                cmp byte ptr [esp+4], 'n'
-                jne @@does_sentence_end
-                cmp byte ptr [esp], ':'
-                jne @@does_sentence_end
-                cmp esi, '-'
-                jne @@does_sentence_end
-                xor esi, esi
-
-                cmp byte ptr [esp+24], 0
-                jne @read_arr_end
-                dec ecx
-                cmp ecx, 0
-                je @err_empty_string
-
-                jmp @read_arr_end
+                cmp slash, 0
+                je @@@slash
+                dec slash
+                @@@slash:
+                    cmp esi, 92 ; игнор бэкслеша
+                    jne @@does_sentence_end
+                    cmp slash, 7
+                    je @@@@slash_before_slash
+                    mov slash, 8
+                    jmp @parse_char
+                    @@@@slash_before_slash:
+                        mov slash, 0
 
             ; проверка конца предложения
             @@does_sentence_end:
-                cmp esi, '.'
+                cmp char, '.'
                 je @@@sentence_ends
-                cmp esi, '!'
+                cmp char, '!'
                 je @@@sentence_ends
-                cmp esi, '?'
+                cmp char, '?'
                 je @@@sentence_ends
                 jmp @@insert_char
                 ; переход на следующее предложение
                 @@@sentence_ends:
-                    xor esi, esi
-
-                    cmp byte ptr [esp], 0  
+                    cmp byte ptr [edi+ebx-1], '.'
                     je @@debug_1
-
-                    push 0
-                    add ebx, 4
-                    jmp @@debug_1
+                    mov char, '.'
+                    inc sentences
 
             ; вставка символ в массив
             @@insert_char:
-                cmp byte ptr [esp], 0
-                jne @@@push_char
-                inc ecx
-
-                @@@push_char:
-                    push esi
-                    xor esi, esi
-                    add ebx, 4
+                mov ah, char
+                mov byte ptr [edi+ebx], ah
+                inc ebx
 
             ; отладка
             @@debug_1:
@@ -179,28 +136,110 @@ include console.inc ; загрузка директив и макроопред�
                     OutInt ebx
                     OutChar '/'
                     OutIntLn arr_size_limit
-
                     OutStr "Количество предложений: " 
-                    OutIntLn ecx
-
+                    OutIntLn sentences
                     OutStr 'Последние 7 элементов стека: '
-                    OutChar byte ptr [esp+24]
-                    OutChar ' '
-                    OutChar byte ptr [esp+20]
-                    OutChar ' '
-                    OutChar byte ptr [esp+16]
-                    OutChar ' '
-                    OutChar byte ptr [esp+12]
-                    OutChar ' '
-                    OutChar byte ptr [esp+8]
-                    OutChar ' '
-                    OutChar byte ptr [esp+4]
-                    OutChar ' '
-                    OutChar byte ptr [esp]
+                    mov esi, edi
+                    add esi, ebx
+                    sub esi, 7
+                    mov ecx, 0
+                    @@debug_1_loop:
+                        mov ah, byte ptr [esi+ecx]
+                        OutChar ah
+                        inc ecx
+                        cmp ecx, 7
+                        jne @@debug_1_loop
                     OutStrLn
                     ConsoleMode ; CP1251 -> CP866 *
 
-                jmp @check_memory
+            ; проверка конца предложения
+            @@does_text_end:
+                cmp byte ptr [edi+ebx-7], '-'
+                jne @check_mem
+                cmp byte ptr [edi+ebx-6], ':'
+                jne @check_mem
+                cmp byte ptr [edi+ebx-5], 'f'
+                jne @check_mem
+                cmp byte ptr [edi+ebx-4], 'i'
+                jne @check_mem
+                cmp byte ptr [edi+ebx-3], 'n'
+                jne @check_mem
+                cmp byte ptr [edi+ebx-2], ':'
+                jne @check_mem
+                cmp byte ptr [edi+ebx-1], '-'
+                jne @check_mem
+                cmp slash, 1
+                jne @read_arr_end
+                cmp byte ptr [edi+ebx-8], 0
+                jne @read_arr_end
+                dec sentences
+                cmp sentences, 0
+                je @err_empty_string
+                jmp @read_arr_end
+
+        @test:
+            outstrln 'yo'
+
+        ; выход из процедуры
+        @read_arr_end:
+            add edi, 7
+            sub ebx, 7
+
+            ret 0
+
+        comment *
+            Возвращаемые регистры:
+            ebx - размер массива
+            edi - начало массива
+        *
+    Read_arr endp
+
+    comment !
+    Parse_arr proc
+        @create_arr:
+            mov eax, 3
+            mul sentences
+            jc @err_mem_overflow ; больше нельзя выделить память
+            New eax ; выделение места размера [eax] с адресом - eax
+            mov esi, eax
+            xchg edi, esi ; теперь edi - начало нового массива, esi - начало старого массива
+            ; comment *
+                ConsoleMode ; CP866 -> CP1251
+                SetTextAttr CLR_CYAN
+                OutStr "Начало массива текста: "
+                OutIntLn esi
+                OutStr "Начало вспомогательного массива: " 
+                OutIntLn edi
+                OutStrLn
+                ConsoleMode ; CP1251 -> CP866
+            ; *
+
+        @fill_arr:
+            xor ecx, ecx
+            @fill_arr_loop:
+                ; [esi+ecx] -> [edi+ecx]
+                mov edx, [esi+ecx]
+                mov [edi+ecx], edx
+                inc ecx
+                cmp ecx, ebx
+                jne @fill_arr_loop
+        outstrln 'lMAO'
+
+    Parse_arr endp
+    !
+
+    start:
+        ; настройка консоли
+        set_console:
+            ConsoleTitle offset STR_TITLE
+            ClrScr
+            SetTextAttr CLR_CYAN
+
+        call Read_arr
+
+        ; call Parse_arr
+
+        exit 0
 
         ; ошибка - переполнение памяти
         @err_mem_overflow:
@@ -219,84 +258,7 @@ include console.inc ; загрузка директив и макроопред�
             ConsoleMode ; CP1251 -> CP688
         @err:
             Dispose edi ; освободить память динамической структуры
-            mov esp, ebp
-            pop ebp
 
             exit 1
-
-        ; выход из процедуры
-        @read_arr_end:
-            mov arr_size_limit, ebx
-
-            mov esp, ebp
-            pop ebp
-
-            ret 0
-    Read_arr endp
-
-    Sort_arr proc
-        ; настроить массив с адресами начал предложений
-        @set_arr_char:
-            New ecx ; выделение места размера [eсx] с адресом - eax
-            mov esi, eax ; адрес начала массива с адресами начал предложений
-            xor eax, eax
-                ; comment *
-                    ConsoleMode ; смена кодировки CP866 на CP1251
-                    SetTextAttr CLR_CYAN
-                    OutStr "Адрес начала массива с адресами первых символов предложений: " 
-                    OutIntLn esi
-                    OutStr "Количество предложений: " 
-                    OutIntLn ecx
-                    ConsoleMode ; смена кодировки CP1251 на CP866
-                ; *
-
-            push ebp
-            mov ebp, esp
-
-        mov eax, edi
-        ; заполнение массива
-        @fill_arr:
-            cmp byte ptr [eax], 0
-            outchar byte ptr [eax]
-            add eax, 4
-            jne @fill_arr
-            push eax
-            sub eax, edi
-            add eax, 4
-            loop @fill_arr
-        mov ecx, edx
-
-        @sort_arr:
-            mov ecx, edx
-            
-        ret
-    Sort_arr endp 
-
-    Print_arr proc
-        exit 1
-        ret
-    Print_arr endp 
-
-    ; установление регистров по умолчанию
-    default_1:
-        mov eax, 0
-        mov ebx, 0
-        mov ecx, 0
-        mov edx, 0
-        mov esi, 0
-        mov edi, 0
-
-    start:
-        set_console:
-            ClrScr
-            SetTextAttr CLR_CYAN
-
-        call Read_arr
-
-        call Sort_arr
-
-        call Print_arr
-
-        exit 0
 
     end start
