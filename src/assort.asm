@@ -12,21 +12,26 @@ include console.inc ; загрузка макросов В.Г.Баулы
     CLR_WHITE       equ 15
 
 .data
-    arr_size_limit dd 0 ; лимит размер массива
-    sentences      dd 0 ; количество предложений
-    slash          db 0
-    char           db ?
+    arr_t_size       dd 0 ; размер массива текста 
+    arr_t_size_limit dd 0 ; лимит размер массива текста
+    arr_h_size       dd 0 ; размер вспомогательного массива
+    sentences        dd 0 ; количество предложений
+    slash            db 0
+    char             db ?
 
 .code
     ; считать и обработать ввод в массив
     Read_arr proc
+        ; по умолчанию
+        @default_1:
+            xor ebx, ebx
 
         ; достаточно ли памяти?
         @check_mem:
-            mov eax, arr_size_limit
+            mov eax, arr_t_size_limit
             sub eax, ebx
             cmp eax, RESERVED_MEM_SIZE
-            jbe @allocate_mem ; arr_size_limit - ebx <= RESERVED_MEM_SIZE
+            jbe @allocate_mem ; arr_t_size_limit - ebx <= RESERVED_MEM_SIZE
             jmp @parse_char
 
         ; выделить память
@@ -37,7 +42,7 @@ include console.inc ; загрузка макросов В.Г.Баулы
             add eax, FIXED_MEM_SIZE ; eax := 2*arr_size + FIXED_MEM_SIZE
             jc @err_mem_overflow ; больше нельзя выделить память
 
-            mov arr_size_limit, eax ; лимит размера памяти
+            mov arr_t_size_limit, eax ; лимит размера памяти
             New eax ; выделение места размера [eax] с адресом - eax
             mov esi, eax
             xchg edi, esi ; теперь edi - начало нового массива, esi - начало старого массива
@@ -59,7 +64,7 @@ include console.inc ; загрузка макросов В.Г.Баулы
             @first_sentence_loop:
                 mov byte ptr [edi+ecx-1], 0
                 loop @first_sentence_loop
-            mov byte ptr [edi+7], 10
+            mov byte ptr [edi+7], '.'
             add ebx, 8
             jmp @parse_char
 
@@ -74,11 +79,13 @@ include console.inc ; загрузка макросов В.Г.Баулы
                 cmp ecx, -1
                 jne @@copy_arr_loop
         
+        ; удаление старого массива
         @delete_arr:
             cmp esi, 0
             jne @parse_char
             Dispose esi ; удалить старый массив
 
+        ; обработка ввода
         @parse_char:
             SetTextAttr CLR_LIGHT_GREEN
             InChar char ; введённый символ
@@ -96,7 +103,7 @@ include console.inc ; загрузка макросов В.Г.Баулы
                 je @@@slash
                 dec slash
                 @@@slash:
-                    cmp esi, 92 ; игнор бэкслеша
+                    cmp char, 92 ; кроме бэкслеша
                     jne @@does_sentence_end
                     cmp slash, 7
                     je @@@@slash_before_slash
@@ -132,13 +139,17 @@ include console.inc ; загрузка макросов В.Г.Баулы
                 ; comment *
                     ConsoleMode ; CP866 -> CP1251
                     SetTextAttr CLR_CYAN
-                    OutStr "Размер массива текста: "
+                    OutStr 'Размер массива текста: '
                     OutInt ebx
                     OutChar '/'
-                    OutIntLn arr_size_limit
-                    OutStr "Количество предложений: " 
-                    OutIntLn sentences
-                    OutStr 'Последние 7 элементов стека: '
+                    OutIntLn arr_t_size_limit
+                    comment *
+                        OutStr 'Количество предложений: '
+                        OutIntLn sentences
+                        OutStr 'Слеш: '
+                        OutIntLn slash
+                    *
+                    OutStr 'Последние 7 элементов массива: '
                     mov esi, edi
                     add esi, ebx
                     sub esi, 7
@@ -149,6 +160,7 @@ include console.inc ; загрузка макросов В.Г.Баулы
                         inc ecx
                         cmp ecx, 7
                         jne @@debug_1_loop
+                    OutStrLn
                     OutStrLn
                     ConsoleMode ; CP1251 -> CP866 *
 
@@ -169,40 +181,60 @@ include console.inc ; загрузка макросов В.Г.Баулы
                 cmp byte ptr [edi+ebx-1], '-'
                 jne @check_mem
                 cmp slash, 1
-                jne @read_arr_end
-                cmp byte ptr [edi+ebx-8], 0
-                jne @read_arr_end
-                dec sentences
-                cmp sentences, 0
-                je @err_empty_string
-                jmp @read_arr_end
-
-        @test:
-            outstrln 'yo'
+                jne @@@specific
+                dec slash
+                jmp @check_mem
+                @@@specific:
+                    cmp byte ptr [edi+ebx-8], '.'
+                    jne @read_arr_end
+                    dec sentences
+                    cmp sentences, 0
+                    je @err_empty_string
+                    jmp @read_arr_end
 
         ; выход из процедуры
         @read_arr_end:
+            mov byte ptr [edi+ebx-7], '.'
+            mov edx, edi
+            add edx, ebx
+            sub edx, 7
+            mov ecx, 6
+            @last_sentence_loop:
+                mov byte ptr [edx+ecx], 0
+                loop @last_sentence_loop
             add edi, 7
-            sub ebx, 7
+            sub ebx, 13 ; ebx := ebx - (7*2 - 1)
 
-            ret 0
+            ; comment *
+                ConsoleMode ; CP866 -> CP1251
+                SetTextAttr CLR_CYAN
+                OutStr "Предложений: "
+                OutIntLn sentences
+                OutStr "Текст: "
+                OutStrLn edi
+                OutStrLn
+                ConsoleMode ; CP1251 -> CP866
+            ; *
+
+        mov arr_t_size, ebx
+
+        ret 0
 
         comment *
             Возвращаемые регистры:
-            ebx - размер массива
-            edi - начало массива
+            edi - начало массива текста
         *
     Read_arr endp
 
-    comment !
     Parse_arr proc
         @create_arr:
-            mov eax, 3
+            mov eax, 8 ; 4 байта на адрес начала предложения, 4 байта на количество символов в предложении
             mul sentences
             jc @err_mem_overflow ; больше нельзя выделить память
+            mov arr_h_size, eax
             New eax ; выделение места размера [eax] с адресом - eax
             mov esi, eax
-            xchg edi, esi ; теперь edi - начало нового массива, esi - начало старого массива
+            xchg edi, esi ; теперь edi - начало вспомогательно массива, esi - начало массива текста
             ; comment *
                 ConsoleMode ; CP866 -> CP1251
                 SetTextAttr CLR_CYAN
@@ -210,23 +242,107 @@ include console.inc ; загрузка макросов В.Г.Баулы
                 OutIntLn esi
                 OutStr "Начало вспомогательного массива: " 
                 OutIntLn edi
+                OutStr "Размер вспомогательного массива: " 
+                OutIntLn arr_h_size
                 OutStrLn
                 ConsoleMode ; CP1251 -> CP866
             ; *
 
         @fill_arr:
-            xor ecx, ecx
-            @fill_arr_loop:
-                ; [esi+ecx] -> [edi+ecx]
-                mov edx, [esi+ecx]
-                mov [edi+ecx], edx
-                inc ecx
-                cmp ecx, ebx
-                jne @fill_arr_loop
-        outstrln 'lMAO'
+            push ebp
+            mov ebp, esp
 
+            push esi
+
+            mov ecx, 1 ; количество обработанных символы
+            xor eax, eax ; количество символов в предложении
+            xor ebx, ebx ; индекс для вспомогательного массива
+            @fill_arr_loop:
+                inc eax
+                cmp byte ptr [esi+ecx], '.'
+                je @@sentence_ends
+                cmp byte ptr [esi+ecx-1], '.'
+                jne @@next
+                mov edx, esi
+                add edx, ebx
+                mov dword ptr [edi+ebx], edx
+                jmp @@next
+                @@sentence_ends:
+                    dec eax
+                    mov dword ptr [edi+ebx+4], eax
+                    xor eax, eax
+                    add ebx, 8
+                @@next:
+                    inc ecx
+                    cmp ecx, arr_t_size
+                    jne @fill_arr_loop
+
+            ; comment *
+                xor ecx, ecx
+                ConsoleMode ; CP866 -> CP1251
+                SetTextAttr CLR_CYAN
+                @print_arr:
+                    OutStr 'Адрес начала предложения: '
+                    OutIntLn [edi+ecx]
+                    OutStr 'Количество символов в предложении: '
+                    OutIntLn [edi+ecx+4]
+                    add ecx, 8
+                    cmp ecx, arr_h_size
+                    jne @print_arr
+                OutStrLn
+                ConsoleMode ; CP866 -> CP1251
+            ; *
+
+        ret 0
+
+        comment *
+            Возвращаемые регистры:
+            esi - начало массива текста
+            edi - начало вспомогательного массива
+        *
     Parse_arr endp
-    !
+
+    Sort_arr proc
+        @sorting:
+            mov ebx, 0
+            @@sorting_loop:
+                add ebx, 2
+                mov ecx, ebp
+                @@@sorting_loop:
+                    sub ecx, 2
+                    mov edx, dword ptr [ecx]
+                    cmp edx, [ebx]
+                    jle @@@@exit_loop
+                    xchg [ebx], edx
+                    inc edx
+                    xchg [ecx+1], edx
+                    jmp @@sorting_loop
+                    @@@@exit_loop:
+                        cmp ecx, 0
+                        jne @@sorting_loop
+                        jmp @@@sorting_loop
+                cmp ebx, arr_h_size
+                jne @@sorting_loop
+
+        ; comment *
+            xor ecx, ecx
+            ConsoleMode ; CP866 -> CP1251
+            SetTextAttr CLR_CYAN
+            OutStrLn
+            @print_arr:
+                OutStr 'Адрес начала предложения: '
+                OutIntLn [edi+ecx]
+                OutStr 'Количество символов в предложении: '
+                OutIntLn [edi+ecx+4]
+                add ecx, 8
+                cmp ecx, arr_t_size
+                jne @print_arr
+            OutStrLn
+            ConsoleMode ; CP1251 -> CP866
+        ; *
+
+        ret 0
+    Sort_arr endp
 
     start:
         ; настройка консоли
@@ -237,7 +353,11 @@ include console.inc ; загрузка макросов В.Г.Баулы
 
         call Read_arr
 
-        ; call Parse_arr
+        call Parse_arr
+
+        outstrln 'e'
+
+        call Sort_arr
 
         exit 0
 
