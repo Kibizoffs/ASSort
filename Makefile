@@ -27,5 +27,5 @@ clean:
 	rm -f $(OBJS) $(LISTINGS) $(PROGRAM) $(SOURCES_UTF)
 
 run:
-	wine ./$(PROGRAM)
+	wine ./$(PROGRAM) 2> stderr.log | tee stdout.log
 
