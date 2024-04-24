@@ -1,4 +1,5 @@
 *.swp
+*.swpx
 *.ppu
 *.o
 *.exe
