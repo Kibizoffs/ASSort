@@ -72,7 +72,7 @@ include inc/console.inc ; загрузка макросов В.Г.Баулы
             @first_sentence_loop:
                 mov byte ptr [edi+ecx-1], 0
                 loop @first_sentence_loop
-            mov byte ptr [edi+7], '>'
+            mov byte ptr [edi+7], '.'
             add ebx, 8
 
             SetTextAttr CLR_LIGHT_GREEN
@@ -155,8 +155,6 @@ include inc/console.inc ; загрузка макросов В.Г.Баулы
                     je @@debug_1
                     cmp byte ptr [edi+ebx-1], '?'
                     je @@debug_1
-                    cmp byte ptr [edi+ebx-1], '>'
-                    je @@debug_1
                     inc sentences
 
             ; вставка символ в массив
@@ -166,7 +164,7 @@ include inc/console.inc ; загрузка макросов В.Г.Баулы
 
             ; отладка
             @@debug_1:
-                  comment *
+                  ; comment *
                     SetTextAttr CLR_CYAN
                     OutStr 'Text array size: '
                     OutInt ebx
@@ -192,7 +190,7 @@ include inc/console.inc ; загрузка макросов В.Г.Баулы
                     pop edi
                     OutStrLn
                     OutStrLn
-                  *
+                  ; *
 
             ; проверка конца предложения
             @@does_text_end:
@@ -212,7 +210,6 @@ include inc/console.inc ; загрузка макросов В.Г.Баулы
                 jne @check_mem
                 cmp slash, 1
                 jne @@@specific
-                dec slash
                 jmp @check_mem
                 @@@specific:
                     mov byte ptr [edi+ebx-7], '.'
@@ -505,6 +502,6 @@ include inc/console.inc ; загрузка макросов В.Г.Баулы
             OutStrLn 'ERR2: empty string'
             SetTextAttr CLR_WHITE
         @err:
-            exit 0
+            exit 1
 
     end start

@@ -5,7 +5,10 @@
 *.exe
 *.log
 *.res
+*.lst
+*.obj
 
 /.vs/
 /.vscode/
 /proj/
+assort
