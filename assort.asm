@@ -208,8 +208,8 @@ include inc/console.inc ; загрузка макросов В.Г.Баулы
                 jne @check_mem
                 cmp byte ptr [edi+ebx-1], '-'
                 jne @check_mem
-                cmp slash, 1
-                jne @@@specific
+                cmp slash, 0
+                je @@@specific ; контроль слэшей перед и внутри -:fin:-
                 jmp @check_mem
                 @@@specific:
                     mov byte ptr [edi+ebx-7], '.'
@@ -265,7 +265,7 @@ include inc/console.inc ; загрузка макросов В.Г.Баулы
 
         ; по умолчанию
         @default_2:
-            mov esi, arr_t_link
+            mov esi, arr_t_link ; esi - адрес начала массива текста
 
         ; создание вспомогательного массива
         @create_arr:
@@ -301,7 +301,7 @@ include inc/console.inc ; загрузка макросов В.Г.Баулы
             @fill_arr_loop:
                 inc edx
                 mov al, first_char
-                cmp byte ptr [esi+ecx], al
+                cmp byte ptr [esi+ecx], al ; сравнение с первым символом текста
                 je @@first_char_encounter
                 cmp byte ptr [esi+ecx], '.'
                 je @@sentence_ends
@@ -310,24 +310,22 @@ include inc/console.inc ; загрузка макросов В.Г.Баулы
                 cmp byte ptr [esi+ecx], '?'
                 je @@sentence_ends
                 jmp @@next
-                @@first_char_encounter:
+                @@first_char_encounter: ; обнаружен первый символ текста
                     inc ebx
                     jmp @@next
-                @@sentence_ends:
+                @@sentence_ends: ; обнаржен конец предложения
                     push esi
                     add esi, ecx
                     sub esi, edx
-                    mov dword ptr [edi], esi
+                    mov dword ptr [edi], esi ; [edi] := esi + ecx - edx, адрес первого символа предложения
                     pop esi
-                    add edi, 4
-                    mov dword ptr [edi], ebx
+                    mov dword ptr [edi+4], ebx ; [edi+4] := ebx, количество первого символа текста в предложении
                     xor ebx, ebx
-                    add edi, 4
                     dec edx
-                    mov dword ptr [edi], edx
+                    mov dword ptr [edi+8], edx ; [edi+8] := edx, количество символов в предложении
                     xor edx, edx
-                    add edi, 4
-                @@next:
+                    add edi, 12
+                @@next: ; переход на следующий символ
                     inc ecx
                     cmp ecx, arr_t_size
                     jne @fill_arr_loop
@@ -368,8 +366,8 @@ include inc/console.inc ; загрузка макросов В.Г.Баулы
 
         ; по умолчанию
         @default_3:
-            mov esi, arr_t_link
-            mov edi, arr_h_link
+            mov esi, arr_t_link ; esi - адрес начала массива текста
+            mov edi, arr_h_link ; edi - адрес начала вспомогательного массива
 
         ; сортировка вставками
         @sorting:
@@ -377,30 +375,29 @@ include inc/console.inc ; загрузка макросов В.Г.Баулы
             @@sorting_loop_1:
                 add ecx, 12
                 cmp ecx, arr_h_size
-                je @arr_sorted
-                mov ebx, [edi+ecx+4]
+                je @arr_sorted ; массив текста отсортирован :D
+                mov ebx, [edi+ecx+4] ; количество первых символов в опорном предложении
                 push ecx
                 push [edi+ecx+8]
                 push [edi+ecx]
                 comment *
-                    [ebx]   - адрес базы,
-                    [ebx+4] - количество первого символа в предложении,
-                    [ebx+8] - количество символов в предложении
+                    [edi+ecx] - адрес начала опорного предложения
+                    [edi+ecx+8] - количество символов в предложении
                 *
                 @@@sorting_loop_2:
                     cmp ebx, [edi+ecx-8]
-                    jge @@@@insert_base_char ; jge - возрастание, jle - убывание
+                    jge @@@@insert_base_char ; jge - сортировка по возрастанию, jle - сортировка по убыванию
                     mov edx, [edi+ecx-12]
-                    mov [edi+ecx], edx
+                    mov [edi+ecx], edx ; [edi+ecx] := [edi+ecx-12]
                     mov edx, [edi+ecx-8]
-                    mov [edi+ecx+4], edx
+                    mov [edi+ecx+4], edx ; [edi+ecx+4] := [edi+ecx-8]
                     mov edx, [edi+ecx-4]
-                    mov [edi+ecx+8], edx
-                    @@@@new_iter:
+                    mov [edi+ecx+8], edx ; [edi+ecx+8] := [edi+ecx-4]
+                    @@@@new_iter: ; новая итерация
                         sub ecx, 12
                         cmp ecx, 0
                         jne @@@sorting_loop_2
-                    @@@@insert_base_char:
+                    @@@@insert_base_char: ; вставка опорного предложения
                         mov [edi+ecx+4], ebx
                         pop ebx
                         mov [edi+ecx], ebx
@@ -409,6 +406,7 @@ include inc/console.inc ; загрузка макросов В.Г.Баулы
                         pop ecx
                         jmp @@sorting_loop_1
 
+        ; массив текста отсортирован
         @arr_sorted:
             ; comment *
                 xor ecx, ecx
@@ -445,16 +443,16 @@ include inc/console.inc ; загрузка макросов В.Г.Баулы
 
         ; по умолчанию
         @default_4:
-            mov esi, arr_t_link
-            mov edi, arr_h_link
+            mov esi, arr_t_link ; esi - адрес начала массива текста
+            mov edi, arr_h_link ; edi - адрес начала вспомогательного массива
     
         xor ecx, ecx
         OutStrLn 'Sorted text array'
         SetTextAttr CLR_LIGHT_GREEN
-        @print_sentences:
+        @print_sentences: ; вывод предложений
             mov eax, [edi+ecx] ; адрес предложения
             xor edx, edx
-            @@print_chars:
+            @@print_chars: ; вывод символов
                 inc edx
                 OutChar byte ptr [eax+edx]
                 cmp edx, [edi+ecx+8]
@@ -473,7 +471,7 @@ include inc/console.inc ; загрузка макросов В.Г.Баулы
     Print_arr endp
 
     start:
-        @set_console_1:
+        @set_console_1: ; настройка консоли
             ConsoleTitle offset STR_TITLE
             ClrScr
             SetTextAttr CLR_CYAN
@@ -490,14 +488,12 @@ include inc/console.inc ; загрузка макросов В.Г.Баулы
             SetTextAttr CLR_WHITE
             exit 0
 
-        ; ошибка - переполнение памяти
-        @err_mem_overflow:
+        @err_mem_overflow: ; ошибка - переполнение памяти
             SetTextAttr CLR_LIGHT_RED
             OutStrLn 'ERR1: memory overflow'
             SetTextAttr CLR_WHITE
             jmp @err
-        ; ошибка - пустая строка
-        @err_empty_string:
+        @err_empty_string: ; ошибка - пустая строка
             SetTextAttr CLR_LIGHT_RED
             OutStrLn 'ERR2: empty string'
             SetTextAttr CLR_WHITE
